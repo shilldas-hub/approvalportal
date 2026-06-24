@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { signIn } from '@/app/actions/auth'
+import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -15,12 +15,29 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
 
-    const result = await signIn(email, password)
+    const supabase = createClient()
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
-    // signIn redirects on success — only reaches here on error
-    if (result?.error) {
-      setError(result.error)
+    if (authError) {
+      setError(authError.message)
       setLoading(false)
+      return
+    }
+
+    if (data.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .single()
+
+      // Full-page navigation so all auth cookies are flushed to the browser
+      // before the proxy intercepts the next request
+      if (profile?.role === 'approver') {
+        window.location.href = '/dashboard/approver'
+      } else {
+        window.location.href = '/dashboard/requester'
+      }
     }
   }
 

@@ -26,9 +26,19 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const path = request.nextUrl.pathname
 
+  // IMPORTANT: always copy refreshed Supabase cookies onto redirect responses
+  // so the browser never holds a stale/expired token.
+  function redirectTo(url: string) {
+    const response = NextResponse.redirect(new URL(url, request.url))
+    supabaseResponse.cookies.getAll().forEach(cookie =>
+      response.cookies.set(cookie.name, cookie.value, cookie)
+    )
+    return response
+  }
+
   // Redirect unauthenticated users to login
   if (!user && path.startsWith('/dashboard')) {
-    return NextResponse.redirect(new URL('/auth/login', request.url))
+    return redirectTo('/auth/login')
   }
 
   // Redirect authenticated users away from auth pages
@@ -40,9 +50,9 @@ export async function proxy(request: NextRequest) {
       .single()
 
     if (profile?.role === 'approver') {
-      return NextResponse.redirect(new URL('/dashboard/approver', request.url))
+      return redirectTo('/dashboard/approver')
     }
-    return NextResponse.redirect(new URL('/dashboard/requester', request.url))
+    return redirectTo('/dashboard/requester')
   }
 
   // Enforce role-based dashboard access
@@ -54,16 +64,15 @@ export async function proxy(request: NextRequest) {
       .single()
 
     if (!profile) {
-      // Profile doesn't exist yet — sign them out and send to login
       await supabase.auth.signOut()
-      return NextResponse.redirect(new URL('/auth/login', request.url))
+      return redirectTo('/auth/login')
     }
 
     if (path.startsWith('/dashboard/approver') && profile.role !== 'approver') {
-      return NextResponse.redirect(new URL('/dashboard/requester', request.url))
+      return redirectTo('/dashboard/requester')
     }
     if (path.startsWith('/dashboard/requester') && profile.role !== 'requester') {
-      return NextResponse.redirect(new URL('/dashboard/approver', request.url))
+      return redirectTo('/dashboard/approver')
     }
   }
 
