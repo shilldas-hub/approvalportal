@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -15,30 +14,25 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
 
-    const supabase = createClient()
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    // Call the Route Handler — server signs in and sets auth cookies
+    // explicitly on the HTTP response (Set-Cookie headers).
+    const res = await fetch('/api/auth/signin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
 
-    if (authError) {
-      setError(authError.message)
+    const data = await res.json()
+
+    if (!res.ok) {
+      setError(data.error ?? 'Login failed')
       setLoading(false)
       return
     }
 
-    if (data.user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', data.user.id)
-        .single()
-
-      // Full-page navigation so all auth cookies are flushed to the browser
-      // before the proxy intercepts the next request
-      if (profile?.role === 'approver') {
-        window.location.href = '/dashboard/approver'
-      } else {
-        window.location.href = '/dashboard/requester'
-      }
-    }
+    // Cookies are now in the browser's cookie jar (Set-Cookie processed).
+    // Full-page navigation so the proxy sees the fresh session cookie.
+    window.location.href = data.redirectTo
   }
 
   return (
