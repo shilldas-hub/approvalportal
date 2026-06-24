@@ -23,7 +23,10 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // Using getSession() here to read auth state from cookies locally (no outbound
+  // network call). The individual dashboard pages use getUser() for secure validation.
+  const { data: { session } } = await supabase.auth.getSession()
+  const user = session?.user ?? null
   const path = request.nextUrl.pathname
 
   // IMPORTANT: always copy refreshed Supabase cookies onto redirect responses
