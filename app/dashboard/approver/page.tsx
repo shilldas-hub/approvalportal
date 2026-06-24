@@ -14,7 +14,8 @@ export default async function ApproverDashboard() {
     .eq('id', user.id)
     .single()
 
-  if (!profile || profile.role !== 'approver') redirect('/dashboard/requester')
+  if (!profile) redirect('/auth/login')
+  if (profile.role !== 'approver') redirect('/dashboard/requester')
 
   // Pending requests with requester profile
   const { data: pendingRequests } = await supabase

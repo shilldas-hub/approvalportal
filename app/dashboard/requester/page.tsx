@@ -14,7 +14,8 @@ export default async function RequesterDashboard() {
     .eq('id', user.id)
     .single()
 
-  if (!profile || profile.role !== 'requester') redirect('/dashboard/approver')
+  if (!profile) redirect('/auth/login')
+  if (profile.role !== 'requester') redirect('/dashboard/approver')
 
   // Fetch requests with decisions joined
   const { data: requests } = await supabase

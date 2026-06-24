@@ -1,34 +1,10 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function proxy(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  // Refresh the session so expiring tokens are updated in the browser.
-  // Auth protection (redirects) is handled by each page's server component,
-  // which runs in the Node.js runtime and can reliably reach Supabase.
-  await supabase.auth.getUser()
-
-  return supabaseResponse
+// Minimal pass-through proxy.
+// All auth protection is handled by page server components (Node.js runtime).
+// Supabase session refresh is handled client-side by the browser SDK.
+export function proxy(request: NextRequest) {
+  return NextResponse.next({ request })
 }
 
 export const config = {
