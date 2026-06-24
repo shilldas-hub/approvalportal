@@ -4,8 +4,6 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(request: NextRequest) {
   const { email, password } = await request.json()
 
-  // Track cookies Supabase wants to set — we'll apply them directly
-  // to the response object so they're guaranteed to reach the browser.
   const pendingCookies: Array<{
     name: string
     value: string
@@ -17,12 +15,8 @@ export async function POST(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
+        getAll() { return request.cookies.getAll() },
         setAll(cookiesToSet) {
-          // Capture rather than writing to a cookie store —
-          // we need to apply them to the final Response object below.
           cookiesToSet.forEach(c => pendingCookies.push(c))
         },
       },
@@ -49,8 +43,6 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({ redirectTo })
 
-  // Write every auth cookie explicitly onto the response so the browser
-  // definitely has them before the client navigates.
   pendingCookies.forEach(({ name, value, options }) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     response.cookies.set(name, value, options as any)
