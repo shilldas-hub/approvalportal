@@ -33,3 +33,27 @@ export async function signUp(
 
   return {}
 }
+
+export async function signIn(
+  email: string,
+  password: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+
+  const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+  if (authError) return { error: authError.message }
+  if (!data.user) return { error: 'Login failed. Please try again.' }
+
+  // Fetch role server-side and redirect — session cookie is set before proxy sees it
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', data.user.id)
+    .single()
+
+  if (profile?.role === 'approver') {
+    redirect('/dashboard/approver')
+  } else {
+    redirect('/dashboard/requester')
+  }
+}

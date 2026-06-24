@@ -1,12 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
+import { signIn } from '@/app/actions/auth'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -17,28 +15,12 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
 
-    const supabase = createClient()
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    const result = await signIn(email, password)
 
-    if (authError) {
-      setError(authError.message)
+    // signIn redirects on success — only reaches here on error
+    if (result?.error) {
+      setError(result.error)
       setLoading(false)
-      return
-    }
-
-    if (data.user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', data.user.id)
-        .single()
-
-      if (profile?.role === 'approver') {
-        router.push('/dashboard/approver')
-      } else {
-        router.push('/dashboard/requester')
-      }
-      router.refresh()
     }
   }
 
@@ -104,7 +86,7 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-xs text-slate-500 mt-5">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href="/auth/signup" className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
               Sign up
             </Link>
