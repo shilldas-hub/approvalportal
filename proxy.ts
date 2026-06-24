@@ -23,58 +23,10 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
-  const path = request.nextUrl.pathname
-
-  // IMPORTANT: always copy refreshed Supabase cookies onto redirect responses
-  // so the browser never holds a stale/expired token.
-  function redirectTo(url: string) {
-    const response = NextResponse.redirect(new URL(url, request.url))
-    supabaseResponse.cookies.getAll().forEach(cookie =>
-      response.cookies.set(cookie.name, cookie.value, cookie)
-    )
-    return response
-  }
-
-  // Redirect unauthenticated users to login
-  if (!user && path.startsWith('/dashboard')) {
-    return redirectTo('/auth/login')
-  }
-
-  // Redirect authenticated users away from auth pages
-  if (user && (path === '/auth/login' || path === '/auth/signup')) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profile?.role === 'approver') {
-      return redirectTo('/dashboard/approver')
-    }
-    return redirectTo('/dashboard/requester')
-  }
-
-  // Enforce role-based dashboard access
-  if (user && path.startsWith('/dashboard')) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile) {
-      await supabase.auth.signOut()
-      return redirectTo('/auth/login')
-    }
-
-    if (path.startsWith('/dashboard/approver') && profile.role !== 'approver') {
-      return redirectTo('/dashboard/requester')
-    }
-    if (path.startsWith('/dashboard/requester') && profile.role !== 'requester') {
-      return redirectTo('/dashboard/approver')
-    }
-  }
+  // Refresh the session so expiring tokens are updated in the browser.
+  // Auth protection (redirects) is handled by each page's server component,
+  // which runs in the Node.js runtime and can reliably reach Supabase.
+  await supabase.auth.getUser()
 
   return supabaseResponse
 }
