@@ -21,17 +21,12 @@ export default async function RequesterDashboard() {
   const { data: requests } = await supabase
     .from('requests')
     .select(`
-      id, category, type, start_date, end_date, details, note, status, created_at, decided_at,
-      decisions ( comment, approver_id )
+      id, category, type, start_date, end_date, details, note, priority, attachment_url, status, created_at, decided_at,
+      decisions ( comment, approver_id ),
+      comments ( id, profile_id, text, created_at, profiles(full_name) )
     `)
     .eq('requester_id', user.id)
     .order('created_at', { ascending: false })
 
-  return (
-    <RequesterClient
-      user={{ id: user.id, email: user.email! }}
-      profile={profile}
-      initialRequests={requests ?? []}
-    />
-  )
+  return <RequesterClient user={{ id: user.id, email: user.email! }} profile={profile} initialRequests={requests as unknown as any[]} />
 }

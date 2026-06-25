@@ -3,8 +3,17 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { approveRequest, denyRequest } from '@/app/actions/requests'
+import { addComment } from '@/app/actions/comments'
 import { signOut } from '@/app/actions/auth'
 import { differenceInCalendarDays, format, parseISO } from 'date-fns'
+
+type RequestComment = {
+  id: string
+  profile_id: string
+  text: string
+  created_at: string
+  profiles: { full_name: string }[] | { full_name: string } | null
+}
 
 type PendingRequest = {
   id: string
@@ -14,9 +23,12 @@ type PendingRequest = {
   end_date: string | null
   details: Record<string, string>
   note: string | null
+  priority: string
+  attachment_url: string | null
   status: string
   created_at: string
   profiles: { full_name: string }[] | { full_name: string } | null
+  comments: RequestComment[]
 }
 
 type DecidedRequest = {
@@ -26,10 +38,13 @@ type DecidedRequest = {
   start_date: string | null
   end_date: string | null
   details: Record<string, string>
+  priority: string
+  attachment_url: string | null
   status: string
   decided_at: string | null
   profiles: { full_name: string }[] | { full_name: string } | null
   decisions: { comment: string | null }[]
+  comments: RequestComment[]
 }
 
 type Props = {
@@ -66,6 +81,89 @@ function RequesterAvatar({ name }: { name: string }) {
   return (
     <div style={{ width: 32, height: 32, borderRadius: '50%', background: bg, border: `1px solid ${border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color, flexShrink: 0 }}>
       {initials(name)}
+    </div>
+  )
+}
+
+function PriorityBadge({ priority }: { priority: string }) {
+  if (priority === 'Normal' || priority === 'Low') return null
+  return (
+    <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ml-2" 
+      style={{
+        background: priority === 'Urgent' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
+        color: priority === 'Urgent' ? '#fca5a5' : '#fcd34d'
+      }}>
+      {priority}
+    </span>
+  )
+}
+
+function CommentThread({ reqId, comments }: { reqId: string, comments: RequestComment[] }) {
+  const [text, setText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  async function submit() {
+    if (!text.trim()) return
+    setSubmitting(true)
+    await addComment(reqId, text)
+    setText('')
+    setSubmitting(false)
+  }
+
+  const sorted = [...(comments || [])].sort((a,b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+
+  if (!expanded && sorted.length === 0) {
+    return (
+      <button onClick={() => setExpanded(true)} className="text-xs text-slate-500 hover:text-slate-300 mt-2">
+        + Add comment
+      </button>
+    )
+  }
+
+  return (
+    <div className="mt-4 border-t border-white/10 pt-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-slate-400">Discussion</span>
+        {expanded && <button onClick={() => setExpanded(false)} className="text-xs text-slate-500 hover:text-slate-300">Hide</button>}
+      </div>
+      
+      {expanded && (
+        <div className="space-y-3 mb-3 max-h-40 overflow-y-auto pr-2">
+          {sorted.map(c => (
+            <div key={c.id} className="text-xs bg-white/5 rounded p-2">
+              <div className="font-semibold text-slate-300 flex justify-between">
+                <span>{(Array.isArray(c.profiles) ? c.profiles[0]?.full_name : c.profiles?.full_name) || 'User'}</span>
+                <span className="text-slate-500 text-[10px]">{format(parseISO(c.created_at), 'MMM d, h:mm a')}</span>
+              </div>
+              <div className="text-slate-400 mt-0.5">{c.text}</div>
+            </div>
+          ))}
+          {sorted.length === 0 && <div className="text-xs text-slate-500 italic">No comments yet.</div>}
+        </div>
+      )}
+
+      {expanded && (
+        <div className="flex gap-2">
+          <input 
+            type="text" 
+            value={text} 
+            onChange={e => setText(e.target.value)} 
+            onKeyDown={e => e.key === 'Enter' && submit()}
+            placeholder="Write a comment..." 
+            className="input-base text-xs py-1.5"
+          />
+          <button onClick={submit} disabled={submitting || !text.trim()} className="btn-primary text-xs py-1.5 px-3 whitespace-nowrap">
+            Send
+          </button>
+        </div>
+      )}
+      
+      {!expanded && sorted.length > 0 && (
+        <button onClick={() => setExpanded(true)} className="text-xs text-slate-400 hover:text-slate-200">
+          View {sorted.length} comment{sorted.length !== 1 ? 's' : ''}
+        </button>
+      )}
     </div>
   )
 }
@@ -136,29 +234,31 @@ export default function ApproverClient({ user, profile, initialPending, initialD
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [denyModal, setDenyModal] = useState<{ requestId: string; name: string } | null>(null)
 
-  // Real-time subscription on requests table
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
       .channel('approver-requests')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, async () => {
-        const { data: p } = await supabase
-          .from('requests')
-          .select(`id, category, type, start_date, end_date, details, note, status, created_at, profiles ( full_name )`)
-          .eq('status', 'pending')
-          .order('created_at', { ascending: true })
-
-        const { data: d } = await supabase
-          .from('requests')
-          .select(`id, category, type, start_date, end_date, details, status, decided_at, profiles ( full_name ), decisions ( comment )`)
-          .in('status', ['approved', 'denied'])
-          .order('decided_at', { ascending: false })
-          .limit(15)
-
-        if (p) setPending(p as unknown as PendingRequest[])
-        if (d) setDecided(d as unknown as DecidedRequest[])
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, fetchAll)
       .subscribe()
+
+    async function fetchAll() {
+      const { data: p } = await supabase
+        .from('requests')
+        .select(`id, category, type, start_date, end_date, details, note, priority, attachment_url, status, created_at, profiles ( full_name ), comments ( id, profile_id, text, created_at, profiles(full_name) )`)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+
+      const { data: d } = await supabase
+        .from('requests')
+        .select(`id, category, type, start_date, end_date, details, priority, attachment_url, status, decided_at, profiles ( full_name ), decisions ( comment ), comments ( id, profile_id, text, created_at, profiles(full_name) )`)
+        .in('status', ['approved', 'denied'])
+        .order('decided_at', { ascending: false })
+        .limit(15)
+
+      if (p) setPending(p as unknown as PendingRequest[])
+      if (d) setDecided(d as unknown as DecidedRequest[])
+    }
 
     return () => { supabase.removeChannel(channel) }
   }, [user.id])
@@ -182,7 +282,6 @@ export default function ApproverClient({ user, profile, initialPending, initialD
 
       <div className="min-h-screen flex flex-col"
         style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(16,185,129,0.08) 0%, #080d1a 55%)' }}>
-        {/* Topbar */}
         <div className="topbar">
           <div className="flex items-center gap-2.5">
             <div className="green-dot" />
@@ -194,17 +293,13 @@ export default function ApproverClient({ user, profile, initialPending, initialD
               {initials(profile.full_name)}
             </div>
             <form action={signOut}>
-              <button type="submit" className="text-xs text-slate-500 hover:text-slate-300 transition-colors px-2 py-1 rounded">
-                Sign out
-              </button>
+              <button type="submit" className="text-xs text-slate-500 hover:text-slate-300 transition-colors px-2 py-1 rounded">Sign out</button>
             </form>
           </div>
         </div>
 
-        {/* Main */}
         <div className="flex-1 max-w-xl mx-auto w-full px-4 py-8">
 
-          {/* Pending Approvals Header */}
           <div className="mb-6">
             <p className="text-xl font-bold text-white mb-1">Pending approvals</p>
             <p className="text-sm text-slate-400">Review and act on requests from your team.</p>
@@ -219,6 +314,13 @@ export default function ApproverClient({ user, profile, initialPending, initialD
             <div className="space-y-8 mb-6">
               {CATEGORIES.map(category => {
                 const catPending = pending.filter(r => r.category === category)
+                // Sort to put Urgent requests at top
+                catPending.sort((a,b) => {
+                  if (a.priority === 'Urgent' && b.priority !== 'Urgent') return -1
+                  if (b.priority === 'Urgent' && a.priority !== 'Urgent') return 1
+                  return 0
+                })
+                
                 if (catPending.length === 0) return null
 
                 return (
@@ -238,42 +340,46 @@ export default function ApproverClient({ user, profile, initialPending, initialD
                           <div key={req.id} className="req-card">
                             <div className="flex items-start gap-3">
                               <RequesterAvatar name={name} />
-                              <div className="flex-1 min-w-0">
+                              <div className="flex-1 min-w-0 w-full">
                                 <div className="flex items-start justify-between gap-2">
                                   <div>
-                                    <div className="text-sm font-semibold text-white">{name}</div>
-                                    <div className="text-xs text-slate-400 mt-0.5">
-                                      {req.type} · {summary}
+                                    <div className="text-sm font-semibold text-white flex items-center">
+                                      {name}
+                                      <PriorityBadge priority={req.priority} />
+                                    </div>
+                                    <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap gap-x-2 gap-y-1">
+                                      <span>{req.type}</span>
+                                      <span>·</span>
+                                      <span>{summary}</span>
                                     </div>
                                     {req.note && (
                                       <div className="text-xs text-slate-500 mt-1.5 italic">"{req.note}"</div>
                                     )}
-                                    {req.details?.link && (
-                                      <a href={req.details.link} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline mt-1 block">
-                                        View Link ↗
-                                      </a>
-                                    )}
+                                    <div className="flex flex-wrap gap-x-3 mt-1.5">
+                                      {req.details?.link && (
+                                        <a href={req.details.link} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline">
+                                          ↗ URL Link
+                                        </a>
+                                      )}
+                                      {req.attachment_url && (
+                                        <a href={req.attachment_url} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline">
+                                          📎 View Attachment
+                                        </a>
+                                      )}
+                                    </div>
                                   </div>
                                   <span className="badge badge-pending shrink-0">New</span>
                                 </div>
                                 <div className="flex gap-2 mt-3">
-                                  <button
-                                    id={`approve-${req.id}`}
-                                    onClick={() => handleApprove(req.id)}
-                                    disabled={!!actionLoading}
-                                    className="btn-approve"
-                                  >
+                                  <button onClick={() => handleApprove(req.id)} disabled={!!actionLoading} className="btn-approve">
                                     {isApprovingThis ? '…' : '✓'} Approve
                                   </button>
-                                  <button
-                                    id={`deny-${req.id}`}
-                                    onClick={() => setDenyModal({ requestId: req.id, name })}
-                                    disabled={!!actionLoading}
-                                    className="btn-deny"
-                                  >
+                                  <button onClick={() => setDenyModal({ requestId: req.id, name })} disabled={!!actionLoading} className="btn-deny">
                                     ✕ Deny
                                   </button>
                                 </div>
+                                
+                                <CommentThread reqId={req.id} comments={req.comments} />
                               </div>
                             </div>
                           </div>
@@ -286,7 +392,6 @@ export default function ApproverClient({ user, profile, initialPending, initialD
             </div>
           )}
 
-          {/* Recently Decided */}
           {decided.length > 0 && (
             <>
               <div className="divider" />
@@ -310,12 +415,15 @@ export default function ApproverClient({ user, profile, initialPending, initialD
 
                           return (
                             <div key={req.id} className="req-card" style={{ opacity: 0.75 }}>
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-start gap-3">
                                 <RequesterAvatar name={name} />
-                                <div className="flex-1 min-w-0">
+                                <div className="flex-1 min-w-0 w-full">
                                   <div className="flex items-center justify-between gap-2">
                                     <div>
-                                      <div className="text-sm font-medium text-slate-200">{name}</div>
+                                      <div className="text-sm font-medium text-slate-200 flex items-center">
+                                        {name}
+                                        <PriorityBadge priority={req.priority} />
+                                      </div>
                                       <div className="text-xs text-slate-500">
                                         {req.type} · {summary}
                                       </div>
@@ -327,6 +435,8 @@ export default function ApproverClient({ user, profile, initialPending, initialD
                                       {req.status === 'approved' ? '✓ Approved' : '✕ Denied'}
                                     </span>
                                   </div>
+                                  
+                                  <CommentThread reqId={req.id} comments={req.comments} />
                                 </div>
                               </div>
                             </div>
