@@ -64,10 +64,9 @@ CREATE POLICY "comments: approver insert"
 -- Enable realtime for comments
 ALTER PUBLICATION supabase_realtime ADD TABLE public.comments;
 
--- 3. Storage bucket setup (Optional automated SQL for Storage, if enabled via Supabase)
--- Note: It is safer to create the bucket manually in the Supabase Dashboard -> Storage UI.
--- Name: 'attachments'
--- Public: yes (or no, but public is easier for downloading without signed URLs).
-
--- If manually created as public, we need a policy so authenticated users can insert:
--- CREATE POLICY "allow auth users to upload attachments" ON storage.objects FOR INSERT TO authenticated WITH CHECK ( bucket_id = 'attachments' );
+-- 3. Storage bucket setup
+-- Note: You still need to manually create the 'attachments' bucket in the Storage UI and make it public.
+-- But we can run the policy creation here.
+CREATE POLICY "allow auth users to upload attachments" ON storage.objects FOR INSERT TO authenticated WITH CHECK ( bucket_id = 'attachments' );
+CREATE POLICY "allow auth users to select attachments" ON storage.objects FOR SELECT TO authenticated USING ( bucket_id = 'attachments' );
+CREATE POLICY "allow public to select attachments" ON storage.objects FOR SELECT USING ( bucket_id = 'attachments' );
