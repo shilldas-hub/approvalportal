@@ -22,7 +22,7 @@ export default async function ApproverDashboard() {
     .from('requests')
     .select(`
       id, category, type, start_date, end_date, details, note, priority, attachment_url, status, created_at,
-      profiles ( full_name ),
+      profiles!requests_requester_id_fkey ( full_name ),
       comments ( id, profile_id, text, created_at, profiles(full_name) )
     `)
     .eq('status', 'pending')
@@ -33,7 +33,7 @@ export default async function ApproverDashboard() {
     .from('requests')
     .select(`
       id, category, type, start_date, end_date, details, priority, attachment_url, status, decided_at,
-      profiles ( full_name ),
+      profiles!requests_requester_id_fkey ( full_name ),
       decisions ( comment ),
       comments ( id, profile_id, text, created_at, profiles(full_name) )
     `)

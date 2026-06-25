@@ -245,13 +245,13 @@ export default function ApproverClient({ user, profile, initialPending, initialD
     async function fetchAll() {
       const { data: p } = await supabase
         .from('requests')
-        .select(`id, category, type, start_date, end_date, details, note, priority, attachment_url, status, created_at, profiles ( full_name ), comments ( id, profile_id, text, created_at, profiles(full_name) )`)
+        .select(`id, category, type, start_date, end_date, details, note, priority, attachment_url, status, created_at, profiles!requests_requester_id_fkey ( full_name ), comments ( id, profile_id, text, created_at, profiles(full_name) )`)
         .eq('status', 'pending')
         .order('created_at', { ascending: true })
 
       const { data: d } = await supabase
         .from('requests')
-        .select(`id, category, type, start_date, end_date, details, priority, attachment_url, status, decided_at, profiles ( full_name ), decisions ( comment ), comments ( id, profile_id, text, created_at, profiles(full_name) )`)
+        .select(`id, category, type, start_date, end_date, details, priority, attachment_url, status, decided_at, profiles!requests_requester_id_fkey ( full_name ), decisions ( comment ), comments ( id, profile_id, text, created_at, profiles(full_name) )`)
         .in('status', ['approved', 'denied'])
         .order('decided_at', { ascending: false })
         .limit(15)
