@@ -39,6 +39,8 @@ type Props = {
   initialDecided: DecidedRequest[]
 }
 
+const CATEGORIES = ['Time Off', 'Budget', 'Equipment', 'Access']
+
 function dayCount(start: string, end: string) {
   return differenceInCalendarDays(parseISO(end), parseISO(start)) + 1
 }
@@ -202,12 +204,10 @@ export default function ApproverClient({ user, profile, initialPending, initialD
         {/* Main */}
         <div className="flex-1 max-w-xl mx-auto w-full px-4 py-8">
 
-          {/* Pending Approvals */}
-          <div className="flex items-center justify-between mb-3">
-            <p className="section-label mb-0">Pending approvals</p>
-            {pending.length > 0 && (
-              <span className="count-pill">{pending.length}</span>
-            )}
+          {/* Pending Approvals Header */}
+          <div className="mb-6">
+            <p className="text-xl font-bold text-white mb-1">Pending approvals</p>
+            <p className="text-sm text-slate-400">Review and act on requests from your team.</p>
           </div>
 
           {pending.length === 0 ? (
@@ -216,54 +216,69 @@ export default function ApproverClient({ user, profile, initialPending, initialD
               <p className="text-sm text-slate-400">All caught up — no pending requests.</p>
             </div>
           ) : (
-            <div className="space-y-3 mb-6">
-              {pending.map(req => {
-                const rawProfile = req.profiles
-                const name = (Array.isArray(rawProfile) ? rawProfile[0]?.full_name : rawProfile?.full_name) ?? 'Unknown'
-                const isApprovingThis = actionLoading === req.id + '-approve'
-                const summary = formatRequestSummary(req)
+            <div className="space-y-8 mb-6">
+              {CATEGORIES.map(category => {
+                const catPending = pending.filter(r => r.category === category)
+                if (catPending.length === 0) return null
 
                 return (
-                  <div key={req.id} className="req-card">
-                    <div className="flex items-start gap-3">
-                      <RequesterAvatar name={name} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="text-sm font-semibold text-white">{name}</div>
-                            <div className="text-xs text-slate-400 mt-0.5">
-                              {req.category}: {req.type} · {summary}
+                  <div key={category}>
+                    <div className="flex items-center justify-between mb-3 border-b border-white/5 pb-2">
+                      <p className="section-label mb-0" style={{ color: '#fff', fontSize: '0.95rem' }}>{category}</p>
+                      <span className="count-pill">{catPending.length}</span>
+                    </div>
+                    <div className="space-y-3">
+                      {catPending.map(req => {
+                        const rawProfile = req.profiles
+                        const name = (Array.isArray(rawProfile) ? rawProfile[0]?.full_name : rawProfile?.full_name) ?? 'Unknown'
+                        const isApprovingThis = actionLoading === req.id + '-approve'
+                        const summary = formatRequestSummary(req)
+
+                        return (
+                          <div key={req.id} className="req-card">
+                            <div className="flex items-start gap-3">
+                              <RequesterAvatar name={name} />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <div className="text-sm font-semibold text-white">{name}</div>
+                                    <div className="text-xs text-slate-400 mt-0.5">
+                                      {req.type} · {summary}
+                                    </div>
+                                    {req.note && (
+                                      <div className="text-xs text-slate-500 mt-1.5 italic">"{req.note}"</div>
+                                    )}
+                                    {req.details?.link && (
+                                      <a href={req.details.link} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline mt-1 block">
+                                        View Link ↗
+                                      </a>
+                                    )}
+                                  </div>
+                                  <span className="badge badge-pending shrink-0">New</span>
+                                </div>
+                                <div className="flex gap-2 mt-3">
+                                  <button
+                                    id={`approve-${req.id}`}
+                                    onClick={() => handleApprove(req.id)}
+                                    disabled={!!actionLoading}
+                                    className="btn-approve"
+                                  >
+                                    {isApprovingThis ? '…' : '✓'} Approve
+                                  </button>
+                                  <button
+                                    id={`deny-${req.id}`}
+                                    onClick={() => setDenyModal({ requestId: req.id, name })}
+                                    disabled={!!actionLoading}
+                                    className="btn-deny"
+                                  >
+                                    ✕ Deny
+                                  </button>
+                                </div>
+                              </div>
                             </div>
-                            {req.note && (
-                              <div className="text-xs text-slate-500 mt-1.5 italic">"{req.note}"</div>
-                            )}
-                            {req.details?.link && (
-                              <a href={req.details.link} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline mt-1 block">
-                                View Link ↗
-                              </a>
-                            )}
                           </div>
-                          <span className="badge badge-pending shrink-0">New</span>
-                        </div>
-                        <div className="flex gap-2 mt-3">
-                          <button
-                            id={`approve-${req.id}`}
-                            onClick={() => handleApprove(req.id)}
-                            disabled={!!actionLoading}
-                            className="btn-approve"
-                          >
-                            {isApprovingThis ? '…' : '✓'} Approve
-                          </button>
-                          <button
-                            id={`deny-${req.id}`}
-                            onClick={() => setDenyModal({ requestId: req.id, name })}
-                            disabled={!!actionLoading}
-                            className="btn-deny"
-                          >
-                            ✕ Deny
-                          </button>
-                        </div>
-                      </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )
@@ -275,34 +290,48 @@ export default function ApproverClient({ user, profile, initialPending, initialD
           {decided.length > 0 && (
             <>
               <div className="divider" />
-              <p className="section-label mb-3">Recently decided</p>
-              <div className="space-y-2.5">
-                {decided.map(req => {
-                  const rawProfile2 = req.profiles
-                  const name = (Array.isArray(rawProfile2) ? rawProfile2[0]?.full_name : rawProfile2?.full_name) ?? 'Unknown'
-                  const summary = formatRequestSummary(req)
-                  const comment = req.decisions?.[0]?.comment
+              <p className="text-lg font-bold text-white mb-4">Recently decided</p>
+              <div className="space-y-8">
+                {CATEGORIES.map(category => {
+                  const catDecided = decided.filter(r => r.category === category)
+                  if (catDecided.length === 0) return null
 
                   return (
-                    <div key={req.id} className="req-card" style={{ opacity: 0.75 }}>
-                      <div className="flex items-center gap-3">
-                        <RequesterAvatar name={name} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="text-sm font-medium text-slate-200">{name}</div>
-                              <div className="text-xs text-slate-500">
-                                {req.category}: {req.type} · {summary}
+                    <div key={category}>
+                      <div className="flex items-center justify-between mb-3 border-b border-white/5 pb-2">
+                        <p className="text-sm font-semibold text-slate-400 uppercase tracking-wider">{category}</p>
+                      </div>
+                      <div className="space-y-2.5">
+                        {catDecided.map(req => {
+                          const rawProfile2 = req.profiles
+                          const name = (Array.isArray(rawProfile2) ? rawProfile2[0]?.full_name : rawProfile2?.full_name) ?? 'Unknown'
+                          const summary = formatRequestSummary(req)
+                          const comment = req.decisions?.[0]?.comment
+
+                          return (
+                            <div key={req.id} className="req-card" style={{ opacity: 0.75 }}>
+                              <div className="flex items-center gap-3">
+                                <RequesterAvatar name={name} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div>
+                                      <div className="text-sm font-medium text-slate-200">{name}</div>
+                                      <div className="text-xs text-slate-500">
+                                        {req.type} · {summary}
+                                      </div>
+                                      {comment && (
+                                        <div className="text-xs text-slate-600 mt-1 italic">"{comment}"</div>
+                                      )}
+                                    </div>
+                                    <span className={`badge ${req.status === 'approved' ? 'badge-approved' : 'badge-denied'} shrink-0`}>
+                                      {req.status === 'approved' ? '✓ Approved' : '✕ Denied'}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
-                              {comment && (
-                                <div className="text-xs text-slate-600 mt-1 italic">"{comment}"</div>
-                              )}
                             </div>
-                            <span className={`badge ${req.status === 'approved' ? 'badge-approved' : 'badge-denied'} shrink-0`}>
-                              {req.status === 'approved' ? '✓ Approved' : '✕ Denied'}
-                            </span>
-                          </div>
-                        </div>
+                          )
+                        })}
                       </div>
                     </div>
                   )
