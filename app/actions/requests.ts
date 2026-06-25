@@ -3,30 +3,53 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 
-// ── Create a new time-off request ──────────────────────────
+// ── Create a new request ───────────────────────────────────
 export async function createRequest(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
+  const category = formData.get('category') as string
   const type = formData.get('type') as string
-  const startDate = formData.get('start_date') as string
-  const endDate = formData.get('end_date') as string
   const note = formData.get('note') as string
 
-  if (!type || !startDate || !endDate) {
-    throw new Error('Type, start date, and end date are required')
+  if (!category || !type) {
+    throw new Error('Category and type are required')
   }
 
-  if (new Date(endDate) < new Date(startDate)) {
-    throw new Error('End date must be on or after start date')
+  let startDate: string | null = null
+  let endDate: string | null = null
+  const details: Record<string, string> = {}
+
+  if (category === 'Time Off') {
+    startDate = formData.get('start_date') as string
+    endDate = formData.get('end_date') as string
+    if (!startDate || !endDate) throw new Error('Start and end dates are required for Time Off')
+    if (new Date(endDate) < new Date(startDate)) throw new Error('End date must be on or after start date')
+  } else if (category === 'Budget') {
+    details.amount = formData.get('amount') as string
+    details.purpose = formData.get('purpose') as string
+    if (!details.amount || !details.purpose) throw new Error('Amount and purpose are required')
+  } else if (category === 'Equipment') {
+    details.item_name = formData.get('item_name') as string
+    details.estimated_cost = formData.get('estimated_cost') as string
+    details.link = formData.get('link') as string
+    if (!details.item_name || !details.estimated_cost) throw new Error('Item name and estimated cost are required')
+  } else if (category === 'Access') {
+    details.system_name = formData.get('system_name') as string
+    details.role_required = formData.get('role_required') as string
+    if (!details.system_name || !details.role_required) throw new Error('System name and role are required')
+  } else {
+    throw new Error('Invalid category')
   }
 
   const { error } = await supabase.from('requests').insert({
     requester_id: user.id,
+    category,
     type,
     start_date: startDate,
     end_date: endDate,
+    details,
     note: note || null,
     status: 'pending',
   })

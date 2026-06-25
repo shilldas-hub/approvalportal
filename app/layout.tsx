@@ -9,8 +9,8 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'Nebula — Time-Off Approvals',
-  description: 'Simple, trackable time-off requests for your team. Submit, review, decide.',
+  title: 'Nebula — Approval Portal',
+  description: 'Simple, trackable requests for your team. Submit, review, decide.',
 }
 
 export default function RootLayout({

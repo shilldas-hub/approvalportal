@@ -21,7 +21,7 @@ export default async function ApproverDashboard() {
   const { data: pendingRequests } = await supabase
     .from('requests')
     .select(`
-      id, type, start_date, end_date, note, status, created_at,
+      id, category, type, start_date, end_date, details, note, status, created_at,
       profiles ( full_name )
     `)
     .eq('status', 'pending')
@@ -31,7 +31,7 @@ export default async function ApproverDashboard() {
   const { data: decidedRequests } = await supabase
     .from('requests')
     .select(`
-      id, type, start_date, end_date, status, decided_at,
+      id, category, type, start_date, end_date, details, status, decided_at,
       profiles ( full_name ),
       decisions ( comment )
     `)

@@ -8,9 +8,11 @@ import { differenceInCalendarDays, format, parseISO } from 'date-fns'
 
 type PendingRequest = {
   id: string
+  category: string
   type: string
-  start_date: string
-  end_date: string
+  start_date: string | null
+  end_date: string | null
+  details: Record<string, string>
   note: string | null
   status: string
   created_at: string
@@ -19,9 +21,11 @@ type PendingRequest = {
 
 type DecidedRequest = {
   id: string
+  category: string
   type: string
-  start_date: string
-  end_date: string
+  start_date: string | null
+  end_date: string | null
+  details: Record<string, string>
   status: string
   decided_at: string | null
   profiles: { full_name: string }[] | { full_name: string } | null
@@ -108,6 +112,22 @@ function DenyModal({ requestId, requesterName, onClose, onDone }: { requestId: s
   )
 }
 
+function formatRequestSummary(req: { category: string, start_date: string | null, end_date: string | null, details: Record<string, string> }) {
+  if (req.category === 'Time Off') {
+    const dc = req.start_date && req.end_date ? dayCount(req.start_date, req.end_date) : 0
+    let s = `${dc} ${dc === 1 ? 'day' : 'days'}`
+    if (req.start_date) s += ` (${fmtDate(req.start_date)}${req.start_date !== req.end_date ? ` – ${fmtDate(req.end_date!)}` : ''})`
+    return s
+  } else if (req.category === 'Budget') {
+    return `$${req.details?.amount || 0} for ${req.details?.purpose || 'Budget'}`
+  } else if (req.category === 'Equipment') {
+    return `${req.details?.item_name || 'Item'} ($${req.details?.estimated_cost || 0})`
+  } else if (req.category === 'Access') {
+    return `${req.details?.system_name || 'System'} (${req.details?.role_required || 'Role'})`
+  }
+  return 'Unknown'
+}
+
 export default function ApproverClient({ user, profile, initialPending, initialDecided }: Props) {
   const [pending, setPending] = useState<PendingRequest[]>(initialPending)
   const [decided, setDecided] = useState<DecidedRequest[]>(initialDecided)
@@ -122,13 +142,13 @@ export default function ApproverClient({ user, profile, initialPending, initialD
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, async () => {
         const { data: p } = await supabase
           .from('requests')
-          .select(`id, type, start_date, end_date, note, status, created_at, profiles ( full_name )`)
+          .select(`id, category, type, start_date, end_date, details, note, status, created_at, profiles ( full_name )`)
           .eq('status', 'pending')
           .order('created_at', { ascending: true })
 
         const { data: d } = await supabase
           .from('requests')
-          .select(`id, type, start_date, end_date, status, decided_at, profiles ( full_name ), decisions ( comment )`)
+          .select(`id, category, type, start_date, end_date, details, status, decided_at, profiles ( full_name ), decisions ( comment )`)
           .in('status', ['approved', 'denied'])
           .order('decided_at', { ascending: false })
           .limit(15)
@@ -200,8 +220,9 @@ export default function ApproverClient({ user, profile, initialPending, initialD
               {pending.map(req => {
                 const rawProfile = req.profiles
                 const name = (Array.isArray(rawProfile) ? rawProfile[0]?.full_name : rawProfile?.full_name) ?? 'Unknown'
-                const dc = dayCount(req.start_date, req.end_date)
                 const isApprovingThis = actionLoading === req.id + '-approve'
+                const summary = formatRequestSummary(req)
+
                 return (
                   <div key={req.id} className="req-card">
                     <div className="flex items-start gap-3">
@@ -211,11 +232,15 @@ export default function ApproverClient({ user, profile, initialPending, initialD
                           <div>
                             <div className="text-sm font-semibold text-white">{name}</div>
                             <div className="text-xs text-slate-400 mt-0.5">
-                              {req.type} · {fmtDate(req.start_date)}
-                              {req.start_date !== req.end_date ? `–${fmtDate(req.end_date)}` : ''} · {dc} {dc === 1 ? 'day' : 'days'}
+                              {req.category}: {req.type} · {summary}
                             </div>
                             {req.note && (
                               <div className="text-xs text-slate-500 mt-1.5 italic">"{req.note}"</div>
+                            )}
+                            {req.details?.link && (
+                              <a href={req.details.link} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline mt-1 block">
+                                View Link ↗
+                              </a>
                             )}
                           </div>
                           <span className="badge badge-pending shrink-0">New</span>
@@ -255,8 +280,9 @@ export default function ApproverClient({ user, profile, initialPending, initialD
                 {decided.map(req => {
                   const rawProfile2 = req.profiles
                   const name = (Array.isArray(rawProfile2) ? rawProfile2[0]?.full_name : rawProfile2?.full_name) ?? 'Unknown'
-                  const dc = dayCount(req.start_date, req.end_date)
+                  const summary = formatRequestSummary(req)
                   const comment = req.decisions?.[0]?.comment
+
                   return (
                     <div key={req.id} className="req-card" style={{ opacity: 0.75 }}>
                       <div className="flex items-center gap-3">
@@ -266,8 +292,7 @@ export default function ApproverClient({ user, profile, initialPending, initialD
                             <div>
                               <div className="text-sm font-medium text-slate-200">{name}</div>
                               <div className="text-xs text-slate-500">
-                                {req.type} · {fmtDate(req.start_date)}
-                                {req.start_date !== req.end_date ? `–${fmtDate(req.end_date)}` : ''} · {dc} {dc === 1 ? 'day' : 'days'}
+                                {req.category}: {req.type} · {summary}
                               </div>
                               {comment && (
                                 <div className="text-xs text-slate-600 mt-1 italic">"{comment}"</div>

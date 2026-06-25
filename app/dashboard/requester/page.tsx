@@ -21,7 +21,7 @@ export default async function RequesterDashboard() {
   const { data: requests } = await supabase
     .from('requests')
     .select(`
-      id, type, start_date, end_date, note, status, created_at, decided_at,
+      id, category, type, start_date, end_date, details, note, status, created_at, decided_at,
       decisions ( comment, approver_id )
     `)
     .eq('requester_id', user.id)

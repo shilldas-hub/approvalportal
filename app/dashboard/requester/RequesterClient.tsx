@@ -8,9 +8,11 @@ import { differenceInCalendarDays, format, parseISO } from 'date-fns'
 
 type Request = {
   id: string
+  category: string
   type: string
-  start_date: string
-  end_date: string
+  start_date: string | null
+  end_date: string | null
+  details: Record<string, string>
   note: string | null
   status: 'pending' | 'approved' | 'denied'
   created_at: string
@@ -24,7 +26,11 @@ type Props = {
   initialRequests: Request[]
 }
 
+const CATEGORIES = ['Time Off', 'Budget', 'Equipment', 'Access']
 const LEAVE_TYPES = ['Vacation', 'Sick Leave', 'Personal', 'WFH']
+const BUDGET_TYPES = ['Software', 'Hardware', 'Travel', 'Training', 'Other']
+const EQUIPMENT_TYPES = ['Laptop', 'Monitor', 'Accessories', 'Phone', 'Other']
+const ACCESS_TYPES = ['Database', 'AWS', 'GitHub', 'Internal Tool', 'Other']
 
 function dayCount(start: string, end: string) {
   return differenceInCalendarDays(parseISO(end), parseISO(start)) + 1
@@ -54,10 +60,21 @@ function StatusBadge({ status }: { status: Request['status'] }) {
 
 export default function RequesterClient({ user, profile, initialRequests }: Props) {
   const [requests, setRequests] = useState<Request[]>(initialRequests)
+  const [category, setCategory] = useState('Time Off')
   const [type, setType] = useState('Vacation')
+  
+  // Form fields
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [amount, setAmount] = useState('')
+  const [purpose, setPurpose] = useState('')
+  const [itemName, setItemName] = useState('')
+  const [estimatedCost, setEstimatedCost] = useState('')
+  const [link, setLink] = useState('')
+  const [systemName, setSystemName] = useState('')
+  const [roleRequired, setRoleRequired] = useState('')
   const [note, setNote] = useState('')
+  
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -76,10 +93,9 @@ export default function RequesterClient({ user, profile, initialRequests }: Prop
           filter: `requester_id=eq.${user.id}`,
         },
         async () => {
-          // Refetch with decisions joined
           const { data } = await supabase
             .from('requests')
-            .select(`id, type, start_date, end_date, note, status, created_at, decided_at, decisions ( comment, approver_id )`)
+            .select(`id, category, type, start_date, end_date, details, note, status, created_at, decided_at, decisions ( comment, approver_id )`)
             .eq('requester_id', user.id)
             .order('created_at', { ascending: false })
           if (data) setRequests(data as Request[])
@@ -90,31 +106,59 @@ export default function RequesterClient({ user, profile, initialRequests }: Prop
     return () => { supabase.removeChannel(channel) }
   }, [user.id])
 
+  // Update default type when category changes
+  useEffect(() => {
+    if (category === 'Time Off') setType(LEAVE_TYPES[0])
+    else if (category === 'Budget') setType(BUDGET_TYPES[0])
+    else if (category === 'Equipment') setType(EQUIPMENT_TYPES[0])
+    else if (category === 'Access') setType(ACCESS_TYPES[0])
+  }, [category])
+
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError('')
     setSuccessMsg('')
 
-    if (!startDate || !endDate) {
-      setFormError('Please select both start and end dates.')
-      return
-    }
-    if (endDate < startDate) {
-      setFormError('End date must be on or after start date.')
-      return
+    if (category === 'Time Off') {
+      if (!startDate || !endDate) return setFormError('Please select both start and end dates.')
+      if (endDate < startDate) return setFormError('End date must be on or after start date.')
+    } else if (category === 'Budget') {
+      if (!amount || !purpose) return setFormError('Amount and purpose are required.')
+    } else if (category === 'Equipment') {
+      if (!itemName || !estimatedCost) return setFormError('Item name and estimated cost are required.')
+    } else if (category === 'Access') {
+      if (!systemName || !roleRequired) return setFormError('System name and role are required.')
     }
 
     setSubmitting(true)
     try {
       const fd = new FormData()
+      fd.set('category', category)
       fd.set('type', type)
-      fd.set('start_date', startDate)
-      fd.set('end_date', endDate)
       fd.set('note', note)
+      
+      if (category === 'Time Off') {
+        fd.set('start_date', startDate)
+        fd.set('end_date', endDate)
+      } else if (category === 'Budget') {
+        fd.set('amount', amount)
+        fd.set('purpose', purpose)
+      } else if (category === 'Equipment') {
+        fd.set('item_name', itemName)
+        fd.set('estimated_cost', estimatedCost)
+        fd.set('link', link)
+      } else if (category === 'Access') {
+        fd.set('system_name', systemName)
+        fd.set('role_required', roleRequired)
+      }
+
       await createRequest(fd)
-      setStartDate('')
-      setEndDate('')
-      setNote('')
+      
+      // Reset forms
+      setStartDate(''); setEndDate(''); setAmount(''); setPurpose(''); 
+      setItemName(''); setEstimatedCost(''); setLink(''); 
+      setSystemName(''); setRoleRequired(''); setNote('');
+      
       setSuccessMsg('Request submitted!')
       setTimeout(() => setSuccessMsg(''), 3000)
     } catch (err: unknown) {
@@ -122,11 +166,9 @@ export default function RequesterClient({ user, profile, initialRequests }: Prop
     } finally {
       setSubmitting(false)
     }
-  }, [type, startDate, endDate, note])
+  }, [category, type, startDate, endDate, amount, purpose, itemName, estimatedCost, link, systemName, roleRequired, note])
 
-  const days = startDate && endDate && endDate >= startDate
-    ? dayCount(startDate, endDate)
-    : null
+  const days = startDate && endDate && endDate >= startDate ? dayCount(startDate, endDate) : null
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(24,95,165,0.12) 0%, #080d1a 55%)' }}>
@@ -155,64 +197,107 @@ export default function RequesterClient({ user, profile, initialRequests }: Prop
         </div>
         <div className="glass-card p-6 mb-6">
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Type */}
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Type</label>
-              <select
-                id="req-type"
-                value={type}
-                onChange={e => setType(e.target.value)}
-                className="input-base"
-                style={{ cursor: 'pointer' }}
-              >
-                {LEAVE_TYPES.map(t => (
-                  <option key={t} value={t} style={{ background: '#111827' }}>{t}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Dates */}
+            
             <div className="grid grid-cols-2 gap-3">
+              {/* Category */}
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">From</label>
-                <input
-                  id="req-start-date"
-                  type="date"
-                  required
-                  value={startDate}
-                  onChange={e => setStartDate(e.target.value)}
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">Category</label>
+                <select
+                  value={category}
+                  onChange={e => setCategory(e.target.value)}
                   className="input-base"
-                  style={{ colorScheme: 'dark' }}
-                />
+                  style={{ cursor: 'pointer' }}
+                >
+                  {CATEGORIES.map(c => (
+                    <option key={c} value={c} style={{ background: '#111827' }}>{c}</option>
+                  ))}
+                </select>
               </div>
+
+              {/* Type */}
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">To</label>
-                <input
-                  id="req-end-date"
-                  type="date"
-                  required
-                  value={endDate}
-                  min={startDate}
-                  onChange={e => setEndDate(e.target.value)}
+                <label className="block text-xs font-medium text-slate-400 mb-1.5">Type</label>
+                <select
+                  value={type}
+                  onChange={e => setType(e.target.value)}
                   className="input-base"
-                  style={{ colorScheme: 'dark' }}
-                />
+                  style={{ cursor: 'pointer' }}
+                >
+                  {category === 'Time Off' && LEAVE_TYPES.map(t => <option key={t} value={t} style={{ background: '#111827' }}>{t}</option>)}
+                  {category === 'Budget' && BUDGET_TYPES.map(t => <option key={t} value={t} style={{ background: '#111827' }}>{t}</option>)}
+                  {category === 'Equipment' && EQUIPMENT_TYPES.map(t => <option key={t} value={t} style={{ background: '#111827' }}>{t}</option>)}
+                  {category === 'Access' && ACCESS_TYPES.map(t => <option key={t} value={t} style={{ background: '#111827' }}>{t}</option>)}
+                </select>
               </div>
             </div>
 
-            {/* Day count preview */}
-            {days !== null && (
-              <p className="text-xs text-blue-400">
-                {days} {days === 1 ? 'day' : 'days'} — {fmtDate(startDate)}
-                {startDate !== endDate ? ` to ${fmtDate(endDate)}` : ''}
-              </p>
+            {/* Dynamic Fields */}
+            {category === 'Time Off' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">From</label>
+                  <input type="date" required value={startDate} onChange={e => setStartDate(e.target.value)} className="input-base" style={{ colorScheme: 'dark' }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">To</label>
+                  <input type="date" required value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)} className="input-base" style={{ colorScheme: 'dark' }} />
+                </div>
+                {days !== null && (
+                  <p className="text-xs text-blue-400 col-span-2">
+                    {days} {days === 1 ? 'day' : 'days'} — {fmtDate(startDate)}
+                    {startDate !== endDate ? ` to ${fmtDate(endDate)}` : ''}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {category === 'Budget' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Amount ($)</label>
+                  <input type="number" required placeholder="150" value={amount} onChange={e => setAmount(e.target.value)} className="input-base" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Purpose</label>
+                  <input type="text" required placeholder="e.g. Figma annual subscription" value={purpose} onChange={e => setPurpose(e.target.value)} className="input-base" />
+                </div>
+              </div>
+            )}
+
+            {category === 'Equipment' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Item Name</label>
+                  <input type="text" required placeholder="e.g. Magic Mouse" value={itemName} onChange={e => setItemName(e.target.value)} className="input-base" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Estimated Cost ($)</label>
+                  <input type="number" required placeholder="99" value={estimatedCost} onChange={e => setEstimatedCost(e.target.value)} className="input-base" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Link (Optional)</label>
+                  <input type="url" placeholder="https://..." value={link} onChange={e => setLink(e.target.value)} className="input-base" />
+                </div>
+              </div>
+            )}
+
+            {category === 'Access' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">System Name</label>
+                  <input type="text" required placeholder="e.g. Production DB" value={systemName} onChange={e => setSystemName(e.target.value)} className="input-base" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Role Required</label>
+                  <input type="text" required placeholder="e.g. Read-Only" value={roleRequired} onChange={e => setRoleRequired(e.target.value)} className="input-base" />
+                </div>
+              </div>
             )}
 
             {/* Note */}
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1.5">Note <span className="text-slate-600">(optional)</span></label>
               <textarea
-                id="req-note"
                 rows={2}
                 placeholder="Add context for your manager…"
                 value={note}
@@ -232,7 +317,7 @@ export default function RequesterClient({ user, profile, initialRequests }: Prop
               </div>
             )}
 
-            <button id="req-submit" type="submit" disabled={submitting} className="btn-primary">
+            <button type="submit" disabled={submitting} className="btn-primary">
               {submitting ? 'Submitting…' : 'Submit request'}
             </button>
           </form>
@@ -254,18 +339,30 @@ export default function RequesterClient({ user, profile, initialRequests }: Prop
         ) : (
           <div className="space-y-3">
             {requests.map(req => {
-              const dc = dayCount(req.start_date, req.end_date)
               const comment = req.decisions?.[0]?.comment
+              
+              let summary = ''
+              if (req.category === 'Time Off') {
+                const dc = req.start_date && req.end_date ? dayCount(req.start_date, req.end_date) : 0
+                summary = `${dc} ${dc === 1 ? 'day' : 'days'}`
+                if (req.start_date) summary += ` (${fmtDate(req.start_date)}${req.start_date !== req.end_date ? ` – ${fmtDate(req.end_date!)}` : ''})`
+              } else if (req.category === 'Budget') {
+                summary = `$${req.details?.amount || 0} for ${req.details?.purpose || 'Budget'}`
+              } else if (req.category === 'Equipment') {
+                summary = `${req.details?.item_name || 'Item'} ($${req.details?.estimated_cost || 0})`
+              } else if (req.category === 'Access') {
+                summary = `${req.details?.system_name || 'System'} (${req.details?.role_required || 'Role'})`
+              }
+
               return (
                 <div key={req.id} className="req-card">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-white">
-                        {req.type} · {dc} {dc === 1 ? 'day' : 'days'}
+                        {req.category}: {req.type}
                       </div>
                       <div className="text-xs text-slate-400 mt-0.5">
-                        {fmtDate(req.start_date)}
-                        {req.start_date !== req.end_date ? ` – ${fmtDate(req.end_date)}` : ''}
+                        {summary}
                         {' · '}
                         <span className="text-slate-500">submitted {fmtDateFull(req.created_at)}</span>
                       </div>
